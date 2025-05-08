@@ -106,7 +106,7 @@ class asm_65c02
     std::unordered_map<std::string, s_label> label_map;
     std::stringstream ss;
     std::smatch m;
-    std::array<std::regex, 3> rx_dir
+    const std::array<std::regex, 3> rx_dir
     {
       std::regex(R"(^\s*\.byte\s+(.+)$)"),
       std::regex(R"(^\s*\.word\s+(.+)$)"),
@@ -310,15 +310,8 @@ class asm_65c02
         }
         else if(ins_r.find(arg0) != ins_r.end())
         {
-          std::optional<int32_t> x = calc_val(arg1, line, line_n, label);
-          if(!x.has_value())
-            opcode.mode = relative_;
-          else 
-          {
-            check_branch(x.value(), opcode.pos + opcode.size, opcode);
-            opcode.operand1 = x.value();
-          }
           set_opcode(arg0 + "_r", 2 ,opcode);
+          opcode.mode = relative_;
           return opcode;
         }
       }
