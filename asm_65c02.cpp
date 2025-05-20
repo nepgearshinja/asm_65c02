@@ -166,6 +166,7 @@ class asm_65c02
     static constexpr uint8_t label{1};
     static constexpr uint8_t negate{2};
     static constexpr uint8_t zp{4};
+    static constexpr uint8_t label_opt{8};
     bool error{};
   private:
     void read_file(const std::string file)
@@ -311,7 +312,14 @@ class asm_65c02
         else if(ins_r.find(arg0) != ins_r.end())
         {
           set_opcode(arg0 + "_r", 2 ,opcode);
-          opcode.mode = relative_;
+          std::optional<int32_t> x = calc_val(arg1, line, line_n, label_opt);
+          if(!x.has_value())
+            opcode.mode = relative_;
+          else 
+          {
+            check_branch(x.value(), 0, opcode, 1);
+            opcode.operand1 = x;
+          }
           return opcode;
         }
       }
@@ -398,7 +406,9 @@ class asm_65c02
       }
       else if(it2 = label_map.find(val); it2 != label_map.end())
       {
-        if(mode & label)
+        if(mode & label_opt)
+          return std::nullopt;
+        else if(mode & label)
           x = it2->second.val;
       }
       else 
@@ -437,7 +447,7 @@ class asm_65c02
           if(pos == std::string::npos)
           {
             z = get_val(arg,line,line_n,mode);
-            if(!(mode & 1) && !z.has_value())
+            if(!(mode & (label | label_opt)) && !z.has_value())
               add_to_ss(line_n, line + " (labels are not allowed here)");
             if(z.has_value())
               check_val(line, line_n, z.value(), mode);
@@ -468,7 +478,7 @@ class asm_65c02
         else 
           arg = arg1.substr(p, pos - p);
         x = get_val(arg, line, line_n, mode);
-        if(!(mode & 1) && !z.has_value())
+        if(!(mode & (label | label_opt)) && !z.has_value())
           add_to_ss(line_n, line + " (labels are not allowed here)");
         if(!x.has_value())
           return std::nullopt;
@@ -718,17 +728,19 @@ class asm_65c02
         std::invoke(mode_pfn_map.find(opcode.mode)->second, this, opcode);
       }
     }
-    void check_branch(const int& x, const int& y, const s_opcode& opcode)
+    void check_branch(const int& x, const int& y, const s_opcode& opcode, bool mode)
     {
       if(x - y < -0x80)
         add_to_ss(opcode.line_n, opcode.line + " (out of range branch)");
-      else if(x - y > 0x7f)
+      else if(!mode && x - y > 0x7f)
+        add_to_ss(opcode.line_n, opcode.line + " (out of range branch)");
+      else if(x - y > 0xff)
         add_to_ss(opcode.line_n, opcode.line + " (out of range branch)");
     }
     void relative(s_opcode& opcode)
     {
       std::optional<int32_t> x = calc_val(opcode.arg1, opcode.line, opcode.line_n, label);
-      check_branch(x.value(), opcode.pos + opcode.size, opcode);
+      check_branch(x.value(), opcode.pos + opcode.size, opcode, 0);
       opcode.operand1 = x.value() - opcode.pos - opcode.size;
     }
     void absolute(s_opcode& opcode)
@@ -746,7 +758,7 @@ class asm_65c02
     {
       std::optional<int32_t> x = calc_val(opcode.arg1, opcode.line, opcode.line_n, label | zp);
       std::optional<int32_t> y = calc_val(opcode.arg2, opcode.line, opcode.line_n, label);
-      check_branch(y.value(), y.value() + opcode.size, opcode);
+      check_branch(y.value(), y.value() + opcode.size, opcode, 0);
       y = y.value() - opcode.pos - opcode.size;
       opcode.operand1 = x;
       opcode.operand2 = y;
